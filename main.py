@@ -11,8 +11,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from docubot import DocuBot
+from agent import DocuBotAgent
 from llm_client import GeminiClient
 from dataset import SAMPLE_QUERIES
+
+# Additional documentation sources beyond docs/ (RAG enhancement). Retrieval
+# runs across all of these together.
+EXTRA_DOC_FOLDERS = ["knowledge"]
 
 
 def try_create_llm_client():
@@ -45,6 +50,7 @@ def choose_mode(has_llm):
         print("  3) RAG (retrieval + LLM)")
     else:
         print("  3) RAG (unavailable, no GEMINI_API_KEY)")
+    print("  4) Agentic workflow (plan -> retrieve -> self-check; runs with or without LLM)")
     print("  q) Quit")
 
     choice = input("Enter choice: ").strip().lower()
@@ -129,12 +135,38 @@ def run_rag_mode(bot, has_llm):
         print()
 
 
+def run_agentic_mode(bot):
+    """
+    Mode 4:
+    Agentic workflow. Plans search queries, retrieves, self-checks grounding,
+    and refuses when evidence is missing. Uses the LLM for the final answer
+    when available, otherwise answers from the retrieved snippets. Every run's
+    reasoning trace is also appended to ai_interactions.md.
+    """
+    agent = DocuBotAgent(bot, llm_client=bot.llm_client)
+
+    queries, label = get_query_or_use_samples()
+    print(f"\nRunning agentic workflow on {label}...\n")
+
+    for query in queries:
+        print("=" * 60)
+        print(f"Question: {query}\n")
+        result = agent.run(query)
+
+        print("Reasoning trace:")
+        for step in result["trace"]:
+            print(f"  - {step}")
+        print("\nAnswer:")
+        print(result["answer"])
+        print()
+
+
 def main():
-    print("DocuBot Tinker Activity")
-    print("=======================\n")
+    print("DocuBot Applied AI System")
+    print("=========================\n")
 
     llm_client, has_llm = try_create_llm_client()
-    bot = DocuBot(llm_client=llm_client)
+    bot = DocuBot(llm_client=llm_client, extra_folders=EXTRA_DOC_FOLDERS)
 
     while True:
         choice = choose_mode(has_llm)
@@ -148,8 +180,10 @@ def main():
             run_retrieval_only_mode(bot)
         elif choice == "3":
             run_rag_mode(bot, has_llm)
+        elif choice == "4":
+            run_agentic_mode(bot)
         else:
-            print("\nUnknown choice. Please pick 1, 2, 3, or q.\n")
+            print("\nUnknown choice. Please pick 1, 2, 3, 4, or q.\n")
 
 
 if __name__ == "__main__":

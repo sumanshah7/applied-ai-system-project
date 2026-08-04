@@ -1,0 +1,59 @@
+%% DocuBot Applied AI System — Architecture
+%% Source diagram (Mermaid). Render at https://mermaid.live or with the
+%% Mermaid CLI. A PNG export lives in ../assets/architecture.png.
+flowchart TD
+    User([Developer question]) --> Agent
+
+    subgraph Sources["Documentation sources"]
+        Docs[/"docs/ — API, AUTH, DATABASE, SETUP"/]
+        Knowledge[/"knowledge/ — DEPLOYMENT (extra source)"/]
+    end
+
+    subgraph Retrieval["Retrieval pipeline (docubot.py)"]
+        Index["build_index()\ninverted index: word -> files"]
+        Snip["split_into_snippets()\nparagraph-level chunks"]
+        Score["score_document()\nstopword filter + plural-normalized\nword-overlap score"]
+        Retrieve["retrieve_scored()\ntop-k snippets + confidence"]
+        Index --> Retrieve
+        Snip --> Retrieve
+        Score --> Retrieve
+    end
+
+    Docs --> Index
+    Knowledge --> Index
+
+    subgraph AgentLoop["Agentic workflow (agent.py)"]
+        Plan["PLAN\nexpand query / synonyms"]
+        Check{"CHECK\nconfidence >= threshold?"}
+        Retry["Reformulate & retry (once)"]
+        Guard{"Any evidence?"}
+        Plan --> Retrieve
+        Retrieve --> Check
+        Check -- "no, retries left" --> Retry --> Retrieve
+        Check -- "yes" --> Guard
+    end
+
+    Agent --> Plan
+    Guard -- "no evidence" --> Refuse["Guardrail: refuse\n'I do not know based on the docs I have'"]
+
+    Guard -- "evidence" --> Generate
+
+    subgraph Generation["Answer generation"]
+        Gemini["Gemini RAG\n(answer_from_snippets)\nonly uses snippets"]
+        Offline["Offline answer\n(retrieved snippets)"]
+        SelfCheck["SELF-CHECK\ngrounding ratio vs snippets"]
+        Gemini --> SelfCheck
+        Offline --> SelfCheck
+    end
+
+    Generate{"LLM available?"}
+    Generate -- "yes (API key)" --> Gemini
+    Generate -- "no" --> Offline
+
+    SelfCheck --> Answer([Grounded answer + cited sources])
+    Refuse --> Answer
+
+    %% Reasoning traces + human/automated checking
+    AgentLoop -. "reasoning traces" .-> Log[("ai_interactions.md")]
+    Answer -. "checked by" .-> Tests["Testing & human review\ntest_harness.py + evaluation.py\n+ model_card.md eval table"]
+    Tests -. "findings feed back into\nretrieval & guardrail tuning" .-> Retrieval
