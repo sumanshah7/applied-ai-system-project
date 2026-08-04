@@ -170,16 +170,17 @@ retries with a synonym. Full traces: [`ai_interactions.md`](ai_interactions.md).
 
 Run `python test_harness.py`. Latest result:
 
-> **9 / 9 expected cases passed (100%); 1 documented known gap.**
-> Average retrieval confidence on answerable queries: **2.43**.
+> **10 / 10 expected cases passed (100%); 1 documented known gap.**
+> Average retrieval confidence on answerable queries: **3.12**.
 
 The harness covers three behaviours: answerable questions surface the correct
 source file (including the extra `knowledge/` source), out-of-scope questions
 trigger the refusal guardrail, and the agent reaches the same decision. The one
-**known gap** — "Which fields are stored in the users table?" retrieves the API
-reference instead of the database doc — is a real limitation of term-frequency
-scoring, tracked (not hidden) so genuine regressions stay visible. `evaluation.py`
-independently reports a retrieval hit-rate of **0.75** over the sample queries.
+**known gap** — "How do I sign in?" retrieves snippets about cryptographically
+*signing* tokens instead of the `/api/login` endpoint — is a genuine word-sense
+limitation of lexical retrieval, tracked (not hidden) so real regressions stay
+visible. `evaluation.py` independently reports a retrieval hit-rate over the
+sample queries.
 
 **What I learned:** grounding is a *system* property, not a model property —
 most reliability came from retrieval quality, snippet sizing, and the refusal

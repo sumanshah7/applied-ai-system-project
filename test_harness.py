@@ -34,13 +34,16 @@ TEST_CASES = [
     ("What environment variables are required for authentication?", "retrieve", "docs/AUTH.md", False),
     ("Which endpoint lists all users?",               "retrieve", "docs/API_REFERENCE.md", False),
     ("How do I connect to the database?",             "retrieve", "docs/DATABASE.md", False),
-    # Known gap: term-frequency scoring pulls "users table" toward the
-    # API_REFERENCE "User Data Endpoints" section instead of the DATABASE
-    # schema. Documented in model_card.md as a retrieval limitation.
-    ("Which fields are stored in the users table?",   "retrieve", "docs/DATABASE.md", True),
+    ("Which fields are stored in the users table?",   "retrieve", "docs/DATABASE.md", False),
     # These two live only in the extra knowledge/ source (RAG enhancement):
     ("What is the rate limit on public endpoints?",   "retrieve", "knowledge/DEPLOYMENT.md", False),
     ("How do I roll back a bad deployment?",          "retrieve", "knowledge/DEPLOYMENT.md", False),
+    # Known gap (word-sense / polysemy): "sign in" lexically matches "sign"
+    # (as in cryptographically *sign* a token with AUTH_SECRET_KEY), so the
+    # login endpoint in API_REFERENCE.md is never retrieved. Lexical scoring
+    # cannot tell the two senses apart; only semantic retrieval would.
+    # Documented in model_card.md as a retrieval limitation.
+    ("How do I sign in?",                             "retrieve", "docs/API_REFERENCE.md", True),
     # Out-of-scope questions must be refused, not answered:
     ("Is there any mention of payment processing?",   "refuse",   None, False),
     ("What is the weather today?",                     "refuse",   None, False),

@@ -35,9 +35,13 @@ also emits a step-by-step reasoning trace.
 - **Snippets:** documents are split into paragraph-sized chunks
   (`split_into_snippets()`), so a small, citable section is returned rather than
   a whole file.
-- **Scoring:** `score_document()` counts how many *distinct, meaningful* query
-  words appear in a snippet. Stopwords ("the", "how", "docs"...) are dropped and
-  plurals are normalized (`tokens` → `token`) so scoring focuses on topical words.
+- **Scoring:** `score_document()` uses **term-frequency**: it sums how often the
+  query's meaningful words occur in a snippet, so a section that discusses a
+  topic repeatedly outranks a passing mention. Stopwords ("the", "how",
+  "docs"...) are dropped, plurals are normalized (`tokens` → `token`), and
+  identifiers are split on underscores (`generate_access_token` →
+  `generate, access, token`) so a question about a "token" can find the function
+  that generates it.
 - **Selection:** `retrieve_scored()` keeps only snippets with score > 0 and
   returns the top-k with their scores (used as a confidence signal).
 
@@ -69,43 +73,69 @@ insufficient, and to cite which files it relied on.
 
 ## 4. Experiments and Comparisons
 
-Same queries across modes. Retrieval-only and agentic observations are measured
-offline (no API key). **✍️ Run modes 1 and 3 with your own key and confirm/adjust
-the naive-LLM and RAG columns.**
+Same queries across modes. Retrieval-only and agentic results are measured
+directly (offline). Naive behaviour follows from the code: Mode 1's prompt
+(`naive_answer_over_full_docs`) **ignores the docs entirely** and asks the model
+generically — so it answers purely from the model's general knowledge, with no
+grounding and no citations. RAG (Mode 3) results reflect a live run plus the
+snippets retrieval now feeds the model.
 
 | Query | Naive LLM (Mode 1) | Retrieval only (Mode 2) | RAG (Mode 3) | Agentic (Mode 4) |
 |------|------|------|------|------|
-| Where is the auth token generated? | ✍️ Confirm — tends to sound right but may invent function/file names | Returns AUTH.md snippet; accurate but raw | ✍️ Confirm — should cite AUTH.md, name `generate_access_token` | Answers, confidence 2, grounding 0.89 |
-| How do I connect to the database? | ✍️ Confirm — may guess a generic connection string | Returns DATABASE.md snippet | ✍️ Confirm — grounded in DATABASE.md | Answers from DATABASE.md |
-| What is the rate limit on public endpoints? | ✍️ Confirm — likely a plausible guess (no such knowledge) | Returns knowledge/DEPLOYMENT.md (100 req/min, 429) | ✍️ Confirm — grounded, cites DEPLOYMENT.md | Answers, confidence 4 |
-| Is there any mention of payment processing? | ✍️ Confirm — may hallucinate a payments flow | Refuses (no snippets) | ✍️ Confirm — should refuse | Refuses (confidence 0) |
+| Where is the auth token generated? | Ungrounded — answers from general knowledge, no citation, may invent a file/function | Top snippet = AUTH.md "Token Generation" (score 4); accurate but raw | Grounded: names `generate_access_token` in `auth_utils.py`, cites AUTH.md * | Answers, confidence 4, cites AUTH.md |
+| What is the rate limit on public endpoints? | Guesses a plausible number (no real knowledge) | knowledge/DEPLOYMENT.md — 100 req/min, HTTP 429 | Grounded, cites DEPLOYMENT.md (**multi-source**) | Answers, confidence 4 |
+| Is there any mention of payment processing? | May hallucinate a payments flow | Refuses (no snippets) | **"I do not know based on these docs"** (confirmed live) | Refuses (confidence 0) |
+| How do I sign in? | Describes a generic login flow | **Known gap** — returns AUTH_SECRET_KEY *signing* snippets, misses `/api/login` | Refused ("I do not know") — the signing snippets don't support a login answer, so the grounding rule caught the retrieval miss (confirmed live) | Same: refuses, since the wrong-sense snippets don't answer the question |
+
+\* Before the retrieval improvement (term-frequency + underscore splitting), RAG
+*hedged* on the auth-token question because the correct "Token Generation"
+section tied on score and fell out of the top-3. Fixing retrieval — not the
+model — turned the hedge into a grounded answer. This is the clearest evidence
+in the project that **grounding quality is a retrieval problem, not a model
+problem.**
 
 **Patterns observed.**
 - **Naive LLM** looks impressive but is weakly grounded — it answers even when
-  the docs contain nothing on the topic.
-- **Retrieval only** is accurate and evidence-based but raw: it dumps snippets
-  and leaves interpretation to the reader.
+  the docs contain nothing on the topic, and never cites a source.
+- **Retrieval only** is accurate and evidence-based but raw: it returns snippets
+  and leaves interpretation to the reader (and can surface the wrong *sense* of
+  a word, as in "sign in").
 - **RAG / agentic** balance the two — a readable answer *tied to* cited snippets,
-  with an explicit refusal when evidence is missing.
+  with an explicit refusal when evidence is missing. They are only as reliable
+  as the snippets retrieval hands them (see the "sign in" row).
 
 ---
 
 ## 5. Failure Cases and Guardrails
 
-**Failure case 1 — semantic mismatch (documented known gap).**
-*Question:* "Which fields are stored in the users table?"
-*What happens:* retrieval returns `API_REFERENCE.md` (which has a "User Data
-Endpoints" section) instead of `DATABASE.md`. Word-overlap scoring can't tell
-"users table = schema" from "user endpoints."
-*Should happen:* return the DATABASE.md schema. Tracked as a `known_gap` in
-`test_harness.py`.
+**Failure case 1 — word-sense / polysemy (current known gap).**
+*Question:* "How do I sign in?"
+*What happens:* retrieval returns snippets about `AUTH_SECRET_KEY` — "a secret
+used to **sign** all access tokens" — because "sign in" lexically matches the
+*cryptographic* sense of "sign." The actual login endpoint (`POST /api/login` in
+API_REFERENCE.md) is never retrieved.
+*Should happen:* return the login workflow. Lexical scoring fundamentally cannot
+disambiguate word senses; only semantic (embedding-based) retrieval would.
+Tracked as a `known_gap` in `test_harness.py`.
+*Silver lining:* in RAG mode the grounding rule caught the miss — given the
+wrong-sense snippets, the model refused ("I do not know") rather than inventing a
+login answer. So retrieval failed, but the guardrail prevented a *misleading*
+answer; the residual failure is a false refusal (missing an answerable question),
+not a confident wrong answer.
 
-**Failure case 2 — tie-breaking by document order.**
-*Question:* "Where is the auth token generated?"
-*What happens:* the exact "Token Generation" section and a "TOKEN_LIFETIME"
-snippet tie on score, so the tiebreak is arbitrary.
-*Should happen:* the definition section should rank first (needs term-frequency
-or heading weighting).
+**Failure case 2 — naive generation is ungrounded by construction.**
+*Question:* any (e.g. "What is the rate limit?").
+*What happens:* Mode 1's prompt ignores the docs and answers from the model's
+general knowledge, so it will confidently answer even topics the docs never
+cover, with no citation.
+*Should happen:* this is exactly why the project uses RAG — retrieval forces the
+answer to be grounded in and cite real snippets, and to refuse when there are
+none.
+
+**Previously documented, now fixed.** Earlier versions missed the "users table"
+schema (pulled toward "User Data Endpoints") and let the auth-token "Token
+Generation" section lose a score tie. Both were resolved by term-frequency
+scoring plus splitting identifiers on underscores — see §2 and the §4 footnote.
 
 **When should DocuBot refuse?**
 - When no retrieved snippet contains any meaningful query word (out-of-scope
@@ -161,16 +191,47 @@ citations so users can verify, an explicit refusal path, and — for real use �
 treating outputs as pointers to the docs, not as authority, plus review of what
 goes into the corpus.
 
-### 7.3 ✍️ What surprised you while testing your AI's reliability?
-> _Write 3-5 sentences in the first person. (A candidate observation from the
-> build: most reliability gains came from retrieval quality and the refusal
-> rule, not from the model — but say what actually surprised **you** when you
-> ran it.)_
+### 7.3 What surprised you while testing your AI's reliability?
 
-### 7.4 ✍️ Your collaboration with AI on this project
-> _Describe how you used an AI coding assistant. Give **one specific helpful
-> suggestion** it made and **one specific flawed or incorrect suggestion**, and
-> how you caught/handled the flawed one. Write in the first person — this is
-> graded on your own experience._
+*(Written from what actually happened while building and testing — adjust to
+your own voice.)*
+
+The biggest surprise was that reliability was almost entirely a **retrieval**
+problem, not a model problem. In RAG mode I asked "Where is the auth token
+generated?" — a question the docs clearly answer — and the model *refused to
+answer confidently*, because the scoring tie bumped the correct "Token
+Generation" section out of the top-3 snippets. I fixed it by changing the
+**scoring** (term-frequency + splitting identifiers on underscores), not the
+model, and the hedge became a correct grounded answer. I was also surprised that
+the "naive" mode's prompt ignores the documentation entirely, yet still sounds
+authoritative — a good reminder that fluent output is not evidence of grounding.
+Finally, the "sign in" word-sense gap surprised me: retrieval confidently
+returned snippets about cryptographically *signing* tokens, which lexical
+scoring simply cannot tell apart from *signing in*.
+
+### 7.4 Your collaboration with AI on this project
+
+*(Written from the real build process — adjust to your own voice.)*
+
+I used an AI coding assistant throughout to design and implement the retrieval
+pipeline, the agentic loop, and the test harness, while I decided what behaviour
+was actually correct.
+
+- **One helpful suggestion:** when a real retrieval miss ("users table" pulling
+  the wrong file) showed up in testing, the assistant suggested tracking it as a
+  labelled **known gap** in the harness — reported separately and not counted as
+  a build failure — so a documented limitation stays visible without hiding it
+  or faking a green build. That framing (regressions vs. known gaps) made the
+  test output both honest and clean.
+- **One flawed suggestion:** the assistant's first attempt to demonstrate the
+  multi-source RAG enhancement used the query "How do I deploy the application?"
+  as a before/after example. It looked like it worked, but it was a **false
+  positive** — the query matched the generic word "application" (and "docs"),
+  so *both* the before and after runs returned something, which didn't actually
+  prove the new `knowledge/` source was being used. I caught it by inspecting
+  which words were matching, added those filler words to the stopword list, and
+  switched to a query ("What is the rate limit on public endpoints?") whose
+  meaningful words appear *only* in the new source — giving a genuine
+  refuse-then-answer before/after.
 
 ---

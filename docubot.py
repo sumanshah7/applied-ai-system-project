@@ -29,8 +29,13 @@ def tokenize(text):
     Split text into lowercase, plural-normalized word tokens, stripping
     punctuation. Shared by indexing and scoring so both agree on what a
     'word' is (and both normalize plurals the same way).
+
+    Underscores are treated as separators so identifiers match natural-language
+    queries: `generate_access_token` -> [generate, access, token],
+    `AUTH_SECRET_KEY` -> [auth, secret, key]. This lets a question about a
+    "token" find the function that generates it.
     """
-    return [normalize(w) for w in re.findall(r"[a-z0-9_]+", text.lower())]
+    return [normalize(w) for w in re.findall(r"[a-z0-9]+", text.lower())]
 
 
 # Very common words that carry little meaning for retrieval. Dropping these
@@ -131,19 +136,17 @@ class DocuBot:
 
     def score_document(self, query, text):
         """
-        TODO (Phase 1):
-        Return a simple relevance score for how well the text matches the query.
+        Return a relevance score for how well the text matches the query.
 
-        Suggested baseline:
-        - Convert query into lowercase words
-        - Count how many appear in the text
-        - Return the count as the score
+        Term-frequency scoring: count every occurrence of a meaningful query
+        word in the text (not just whether it appears once). A section that
+        discusses a topic repeatedly outranks one that mentions it in passing,
+        which breaks ties in favour of the most on-topic snippet.
         """
-        query_words = [w for w in tokenize(query) if w not in STOPWORDS]
-        text_words = set(tokenize(text))
+        query_words = {w for w in tokenize(query) if w not in STOPWORDS}
 
-        # Count how many distinct meaningful query words appear in the text.
-        return sum(1 for w in set(query_words) if w in text_words)
+        # Sum occurrences of every meaningful query word in the text.
+        return sum(1 for t in tokenize(text) if t in query_words)
 
     def retrieve(self, query, top_k=3):
         """
