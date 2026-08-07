@@ -26,8 +26,9 @@ venv/
 # Logs
 *.log
 
-# Side-experiment documents (health-plan PDFs + extracted text).
-# Kept local only so the graded project stays about the software API docs.
-# DEPLOYMENT.md (.md) is unaffected and stays tracked.
+# Side-experiment documents (health-plan PDFs + extracted text), kept local
+# only so the graded project stays about the software API docs. To query them,
+# add "knowledge_health" to EXTRA_DOC_FOLDERS in main.py.
+knowledge_health/
 knowledge/*.pdf
 knowledge/*.txt

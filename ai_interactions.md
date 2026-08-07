@@ -120,3 +120,38 @@ Reasoning trace:
 1. DECIDE: no supporting snippets found -> refusing.
 
 ---
+
+## 2026-08-06T20:10:37 — what is prior authorization
+
+- Refused: False
+- Confidence: 1
+- Sources: ['docs/API_REFERENCE.md', 'docs/API_REFERENCE.md', 'docs/API_REFERENCE.md']
+
+Reasoning trace:
+
+1. PLAN: generated 1 search query(ies): ['what is prior authorization']
+1. ACT (attempt 1): query='what is prior authorization' -> confidence=1, snippets from ['docs/API_REFERENCE.md', 'docs/API_REFERENCE.md', 'docs/API_REFERENCE.md']
+1. CHECK: confidence 1 < 2 and no reformulations left.
+1. ANSWER: generated via Gemini (RAG).
+1. SELF-CHECK: grounding ratio = 0.00
+1. SELF-CHECK: grounding below threshold -> appended caution note.
+
+---
+
+## 2026-08-06T20:28:10 — Tell me about the db
+
+- Refused: False
+- Confidence: 3
+- Sources: ['docs/DATABASE.md', 'docs/DATABASE.md', 'docs/DATABASE.md']
+
+Reasoning trace:
+
+1. PLAN: generated 2 search query(ies): ['Tell me about the db', 'tell me about db database']
+1. ACT (attempt 1): query='Tell me about the db' -> confidence=1, snippets from ['docs/DATABASE.md', 'docs/DATABASE.md', 'docs/DATABASE.md']
+1. CHECK: confidence 1 < 2; reformulating.
+1. ACT (attempt 2): query='tell me about db database' -> confidence=3, snippets from ['docs/DATABASE.md', 'docs/DATABASE.md', 'docs/DATABASE.md']
+1. CHECK: confidence 3 >= 2; proceeding to answer.
+1. ANSWER: generated via Gemini (RAG).
+1. SELF-CHECK: grounding ratio = 0.92
+
+---
